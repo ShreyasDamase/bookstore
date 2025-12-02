@@ -2,14 +2,22 @@ import express from "express";
 import cloudinary from "../lib/cloudinary.js";
 import Book from "../models/Book.js";
 import protectRoute from "../middleware/auth.middleware.js";
+import User from "../models/User.js";
 
 const router = express.Router();
 
 router.post("/", protectRoute, async (req, res) => {
   try {
-    const { title, caption, rating, image } = req.body;
+    const { title, caption, rating, image, categories } = req.body;
 
-    if (!image || !title || !caption || !rating) {
+    if (
+      !image ||
+      !title ||
+      !caption ||
+      !rating ||
+      !categories ||
+      categories.length === 0
+    ) {
       return res.status(400).json({ message: "Please provide all fields" });
     }
 
@@ -23,6 +31,7 @@ router.post("/", protectRoute, async (req, res) => {
       caption,
       rating,
       image: imageUrl,
+      categories,
       user: req.user._id,
     });
 
@@ -67,7 +76,9 @@ router.get("/", protectRoute, async (req, res) => {
 // get recommended books by the logged in user
 router.get("/user", protectRoute, async (req, res) => {
   try {
-    const books = await Book.find({ user: req.user._id }).sort({ createdAt: -1 });
+    const books = await Book.find({ user: req.user._id }).sort({
+      createdAt: -1,
+    });
     res.json(books);
   } catch (error) {
     console.error("Get user books error:", error.message);
@@ -101,6 +112,79 @@ router.delete("/:id", protectRoute, async (req, res) => {
   } catch (error) {
     console.log("Error deleting book", error);
     res.status(500).json({ message: "Internal server error" });
+  }
+});
+router.get("/users", protectRoute, async (req, res) => {
+  try {
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Fetch paginated users
+    const users = await User.find()
+      .select("username email profileImage createdAt")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    // Count total users
+    const totalUsers = await User.countDocuments();
+
+    res.json({
+      users,
+      currentPage: page,
+      totalUsers,
+      totalPages: Math.ceil(totalUsers / limit),
+    });
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.get("/categories", protectRoute, async (req, res) => {
+  try {
+    const categories = await Book.distinct("categories");
+    res.json(categories);
+  } catch (error) {
+    console.error("Error fetching categories:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+router.get("/category/:name", protectRoute, async (req, res) => {
+  try {
+    const categoryName = req.params.name.trim().toLowerCase();
+
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Build regex filter (case-insensitive)
+    const filter = {
+      categories: {
+        $regex: new RegExp(`^${categoryName}$`, "i"),
+      },
+    };
+
+    // Fetch books
+    const books = await Book.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate("user", "username profileImage");
+
+    // Count docs for pagination meta
+    const totalBooks = await Book.countDocuments(filter);
+
+    res.json({
+      books,
+      currentPage: page,
+      totalBooks,
+      totalPages: Math.ceil(totalBooks / limit),
+    });
+  } catch (error) {
+    console.error("Error fetching books by category:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
