@@ -7,11 +7,18 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
+      trim: true,
     },
     email: {
       type: String,
       required: true,
       unique: true,
+      trim: true,
+      lowercase: true,
+      validate: {
+        validator: (v) => /^\S+@\S+\.\S+$/.test(v),
+        message: "Invalid email format",
+      },
     },
     password: {
       type: String,
@@ -22,19 +29,34 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+
     refreshToken: {
       type: String,
       default: null,
     },
+
     tokenVersion: {
       type: Number,
       default: 0,
+    },
+
+    // Forgot Password OTP
+    resetOTP: { type: String, default: null },
+    resetOTPExpires: { type: Date, default: null },
+
+    // Registration OTP
+    registerOTP: { type: String, default: null },
+    registerOTPExpires: { type: Date, default: null },
+
+    isVerified: {
+      type: Boolean,
+      default: false,
     },
   },
   { timestamps: true }
 );
 
-// hash password before saving user to db
+// Hash password
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
 
@@ -44,11 +66,9 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
-// compare password func
-userSchema.methods.comparePassword = async function (userPassword) {
-  return await bcrypt.compare(userPassword, this.password);
+// Compare password
+userSchema.methods.comparePassword = function (password) {
+  return bcrypt.compare(password, this.password);
 };
 
-const User = mongoose.model("User", userSchema);
-
-export default User;
+export default mongoose.model("User", userSchema);
