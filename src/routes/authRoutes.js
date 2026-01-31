@@ -25,13 +25,13 @@ const generateTokens = (user) => {
   const accessToken = jwt.sign(
     { userId: user._id, tokenVersion: user.tokenVersion },
     process.env.JWT_SECRET,
-    { expiresIn: "15m" }
+    { expiresIn: "15m" },
   );
 
   const refreshToken = jwt.sign(
     { userId: user._id, tokenVersion: user.tokenVersion },
     process.env.JWT_REFRESH_SECRET,
-    { expiresIn: "7d" }
+    { expiresIn: "7d" },
   );
 
   return { accessToken, refreshToken };
@@ -237,18 +237,37 @@ router.post("/refresh", async (req, res) => {
       return res.status(401).json({ message: "User not found" });
     }
 
-    // 🔥 IMPORTANT — tokenVersion check
+    // 🔥 tokenVersion check (logout protection)
     if (decoded.tokenVersion !== user.tokenVersion) {
       return res.status(401).json({ message: "User logged out" });
     }
 
+    // 🔥 IMPORTANT — match refresh token with DB
+    if (user.refreshToken !== refreshToken) {
+      return res.status(401).json({ message: "Refresh token mismatch" });
+    }
+
+    // ===== GENERATE NEW TOKENS =====
     const newAccessToken = jwt.sign(
       { userId: user._id, tokenVersion: user.tokenVersion },
       process.env.JWT_SECRET,
-      { expiresIn: "15m" }
+      { expiresIn: "15m" },
     );
 
-    res.status(200).json({ accessToken: newAccessToken });
+    const newRefreshToken = jwt.sign(
+      { userId: user._id, tokenVersion: user.tokenVersion },
+      process.env.JWT_REFRESH_SECRET,
+      { expiresIn: "7d" },
+    );
+
+    // 🔥 Save new refresh token in DB
+    user.refreshToken = newRefreshToken;
+    await user.save();
+
+    res.status(200).json({
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+    });
   } catch (error) {
     console.log("Error in refresh route", error);
     res.status(401).json({ message: "Invalid refresh token" });
